@@ -9,11 +9,11 @@ from pyutils.my_string import to_snake_case, to_pascal_case
 class JsonDataclass(ABC):
 
     @classmethod
-    def from_json(cls, **kwargs: Dict[str, Any]):
+    def from_json(cls, json_object: Dict[str, Any]):
 
         prepared_kwargs: Dict[str, Any] = {}
 
-        for key, value in kwargs.items():
+        for key, value in json_object.items():
             snake_cased_key: str = to_snake_case(string=key)
             annotated_value_type = cls.__annotations__[snake_cased_key]
 
