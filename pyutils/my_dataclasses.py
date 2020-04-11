@@ -18,7 +18,7 @@ class JsonDataclass(ABC):
             annotated_value_type = cls.__annotations__[snake_cased_key]
 
             if is_dataclass(annotated_value_type) and issubclass(annotated_value_type, JsonDataclass):
-                prepared_kwargs[snake_cased_key] = annotated_value_type.from_json(**value)
+                prepared_kwargs[snake_cased_key] = annotated_value_type.from_json(json_object=value)
             elif get_origin(annotated_value_type) is list:
                 
                 list_annotated_value_type = get_args(annotated_value_type)
@@ -29,7 +29,7 @@ class JsonDataclass(ABC):
 
                 if is_dataclass(list_annotated_value_type) and issubclass(list_annotated_value_type, JsonDataclass):
                     prepared_kwargs[snake_cased_key] = [
-                        list_annotated_value_type.from_json(**element_kwargs)
+                        list_annotated_value_type.from_json(json_object=element_kwargs)
                         for element_kwargs in value
                     ]
                 else:
