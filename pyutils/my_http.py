@@ -4,6 +4,10 @@ from typing import Dict, Type, Union
 from http import HTTPStatus
 
 
+def status_ok(status_code: Union[int, HTTPStatus]) -> bool:
+    return str(int(status_code)).startswith('2')
+
+
 class HTTPStatusError(Exception, ABC):
     REASON_PHRASE: str = NotImplemented
     STATUS_CODE: int = NotImplemented
