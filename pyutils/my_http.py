@@ -4,8 +4,8 @@ from typing import Dict, Type, Union
 from http import HTTPStatus
 
 
-def status_ok(status_code: Union[int, HTTPStatus]) -> bool:
-    return str(int(status_code)).startswith('2')
+def status_ok(status_code: int) -> bool:
+    return 200 <= status_code <= 299
 
 
 class HTTPStatusError(Exception, ABC):
