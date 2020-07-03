@@ -5,17 +5,17 @@ from typing import Union
 NUM_MESSAGE_LENGTH_SPECIFIER_BYTES = 4
 
 
-def _make_outgoing_message_bytes(message: bytes) -> bytes:
+def _make_outgoing_message_bytes(message_bytes: bytes) -> bytes:
     """
     Format the an outgoing message's bytes.
 
     The message bytes are preceded by bytes indicating the length of the message.
 
-    :param message: Unformatted message bytes.
+    :param message_bytes: Unformatted message bytes.
     :return: Formatted message bytes.
     """
 
-    return struct_pack('=I', len(message)) + message
+    return struct_pack('=I', len(message_bytes)) + message_bytes
 
 
 def _write_message_bytes(message_bytes: bytes) -> int:
@@ -35,7 +35,7 @@ def write_message(message: Union[bytes, str], encoding: str = 'utf-8') -> int:
 
     return _write_message_bytes(
         message_bytes=_make_outgoing_message_bytes(
-            message=message.encode(encoding=encoding) if isinstance(message, str) else message
+            message_bytes=message.encode(encoding=encoding) if isinstance(message, str) else message
         )
     )
 
