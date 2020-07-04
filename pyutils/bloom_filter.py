@@ -5,16 +5,16 @@ from struct import pack, Struct
 from math import ceil, log
 from functools import cached_property
 from collections.abc import Sized, Container
-from typing import SupportsBytes, Callable, Generator
+from typing import SupportsBytes, Callable, Generator, Iterable, Tuple
 
 from bitarray import bitarray
 
 
-class _IndexNumberStruct(Struct):
+class _BitIndexNumberStruct(Struct):
 
     def __init__(self, num_slice_bits: int):
         """
-        Initialize a `Struct` to be used for unpacking index numbers from a hash.
+        Initialize a `Struct` to be used for unpacking bit index numbers from a hash.
 
         :param num_slice_bits: The number of bits in a slice, which determines the format code.
         """
@@ -39,9 +39,9 @@ def _make_aggregated_hash_function(
     hash_function=sha3_256
 ) -> Callable[[bytes], Generator[int, None, None]]:
     """
-    Make a customized aggregated hash function that yields index numbers into Bloom filter slices.
+    Make a customized aggregated hash function that yields bit index numbers into Bloom filter slices.
 
-    The necessary size of the index number type are chosen based on the input parameters.
+    The necessary size of the bit index number type is chosen based on the input parameters.
 
     :param num_slices: The number of slices that the Bloom filter uses.
     :param num_bits_per_slice: The number of bits in each of the slices that the Bloom filter uses.
@@ -49,19 +49,19 @@ def _make_aggregated_hash_function(
     :return: A customized aggregated hash function.
     """
 
-    # Choose the smallest struct type that can index all slots in a slice.
+    # Choose the smallest struct type that can index all bits in a slice.
     # NOTE: The chosen struct type is very possibly able to store larger numbers than the number of bits per slice. To
     # take that into account, unpacked numbers are transformed with the modulo operator. If the number of bits per slice
     # does not evenly divide the maximum struct type value, the distribution will not be truly uniform.
-    slice_index_number_struct: Struct = _IndexNumberStruct(num_slice_bits=num_bits_per_slice)
+    bit_index_number_struct: Struct = _BitIndexNumberStruct(num_slice_bits=num_bits_per_slice)
 
-    # The struct type size may not evenly divide the resulting hash size; determine the number of index numbers that
+    # The struct type size may not evenly divide the resulting hash size; determine the number of bit index numbers that
     # fit into the hash.
-    num_slice_index_numbers_in_hash = hash_function().digest_size // slice_index_number_struct.size
+    num_bit_index_numbers_in_hash = hash_function().digest_size // bit_index_number_struct.size
 
     # Use as many hash functions as are necessary to assure that each slice is indexed. Each hash function must be
     # salted as to make them independent.
-    num_different_hash_functions = ceil(num_slices / num_slice_index_numbers_in_hash)
+    num_different_hash_functions = ceil(num_slices / num_bit_index_numbers_in_hash)
     salt_values = tuple(pack('I', i) for i in range(num_different_hash_functions))
 
     def aggregated_hash_function(value: bytes):
@@ -71,10 +71,10 @@ def _make_aggregated_hash_function(
         for salt_value in salt_values:
             hash_value: bytes = hash_function(salt_value + value).digest()
 
-            for hash_offset_index in range(num_slice_index_numbers_in_hash):
-                yield slice_index_number_struct.unpack_from(
+            for hash_offset_index in range(num_bit_index_numbers_in_hash):
+                yield bit_index_number_struct.unpack_from(
                     buffer=hash_value,
-                    offset=hash_offset_index * slice_index_number_struct.size
+                    offset=hash_offset_index * bit_index_number_struct.size
                 )[0] % num_bits_per_slice
 
                 num_slice_indices_provided += 1
@@ -164,11 +164,22 @@ class BloomFilter(Sized, Container):
     def __len__(self) -> int:
         return self._num_elements_mapped
 
-    def add(self, value: SupportsBytes):
+    def add(self, value: SupportsBytes) -> bool:
         if self._num_elements_mapped > self.capacity:
-            raise IndexError("The Bloom filter is at capacity. The requested false positive rate cannot be fulfilled.")
+            raise IndexError('The Bloom filter is at capacity. The requested false positive rate cannot be fulfilled.')
 
-        for slice_index, hash_value in enumerate(self._hash(bytes(value))):
-            self._bit_array[slice_index * self.num_bits_per_slice + hash_value] = True
+        already_present = False
+
+        # TODO: Return whether already in filter.
+        for slice_index, slice_bit_index in enumerate(self._hash(bytes(value))):
+            bit_index = slice_index * self.num_bits_per_slice + slice_bit_index
+            already_present |= self._bit_array[bit_index]
+            self._bit_array[bit_index] = True
 
         self._num_elements_mapped += 1
+
+        return already_present
+
+    def update(self, *values: Iterable[bytes]) -> Tuple[bool, ...]:
+        return tuple(self.add(value=value) for value in values)
+
