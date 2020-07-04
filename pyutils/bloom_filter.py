@@ -1,11 +1,12 @@
 # Heavily inspired by python-bloomfilter.
 
+from __future__ import annotations
 from hashlib import sha3_256
 from struct import pack, Struct
 from math import ceil, log
 from functools import cached_property
 from collections.abc import Sized, Container
-from typing import SupportsBytes, Callable, Generator, Iterable, Tuple
+from typing import SupportsBytes, Callable, Generator, Iterable, Tuple, Collection, List
 
 from bitarray import bitarray
 
@@ -66,7 +67,7 @@ def _make_aggregated_hash_function(
 
     def aggregated_hash_function(value: bytes):
 
-        num_slice_indices_provided = 0
+        num_bit_indices_provided = 0
 
         for salt_value in salt_values:
             hash_value: bytes = hash_function(salt_value + value).digest()
@@ -77,8 +78,8 @@ def _make_aggregated_hash_function(
                     offset=hash_offset_index * bit_index_number_struct.size
                 )[0] % num_bits_per_slice
 
-                num_slice_indices_provided += 1
-                if num_slice_indices_provided == num_slices:
+                num_bit_indices_provided += 1
+                if num_bit_indices_provided == num_slices:
                     return
 
     return aggregated_hash_function
@@ -115,6 +116,60 @@ class BloomFilter(Sized, Container):
 
         self._bit_array = bitarray(self.bit_size)
         self._bit_array.setall(False)
+
+    @classmethod
+    def from_values(
+        cls,
+        values: Iterable[SupportsBytes],
+        capacity: int,
+        false_positive_probability: float = 0.001,
+        hash_function=sha3_256
+    ) -> BloomFilter:
+        """
+        Make a Bloom filter from an iterable of values, using a provided capacity.
+
+        :param values: The values to be added to the Bloom filter.
+        :param capacity: The maximum number of elements to be mapped.
+        :param false_positive_probability: The accepted false positive probability rate.
+        :param hash_function: The underlying hash function to be used.
+        :return: A Bloom filter initialized with the provided entries.
+        """
+
+        bloom_filter = cls(
+            capacity=capacity,
+            false_positive_probability=false_positive_probability,
+            hash_function=hash_function
+        )
+        bloom_filter.update(*values)
+
+        return bloom_filter
+
+    @classmethod
+    def from_values_2(
+        cls,
+        values: Collection[SupportsBytes],
+        capacity_proportion: float = 1.5,
+        false_positive_probability: float = 0.001,
+        hash_function=sha3_256
+    ) -> BloomFilter:
+        """
+        Make a Bloom filter from a collection of values, using a provided capacity proportion.
+
+        :param values: The values to be added to the Bloom filter.
+        :param capacity_proportion: The capacity as a proportion to the provided entries.
+        :param false_positive_probability: The accepted false positive probability rate.
+        :param hash_function: The underlying hash function to be used.
+        :return: A Bloom filter initialized with the provided entries.
+        """
+
+        bloom_filter = cls(
+            capacity=ceil(capacity_proportion * len(values)),
+            false_positive_probability=false_positive_probability,
+            hash_function=hash_function
+        )
+        bloom_filter.update(*values)
+
+        return bloom_filter
 
     @cached_property
     def capacity(self) -> int:
@@ -165,21 +220,34 @@ class BloomFilter(Sized, Container):
         return self._num_elements_mapped
 
     def add(self, value: SupportsBytes) -> bool:
+        """
+        Add a value to the Bloom filter.
+
+        :param value: The value to be added to the Bloom filter.
+        :return: Whether a value was already mapped to the same bits as the provided value's.
+        """
+
         if self._num_elements_mapped > self.capacity:
             raise IndexError('The Bloom filter is at capacity. The requested false positive rate cannot be fulfilled.')
 
-        already_present = False
+        bit_statuses: List[bool] = []
 
-        # TODO: Return whether already in filter.
         for slice_index, slice_bit_index in enumerate(self._hash(bytes(value))):
-            bit_index = slice_index * self.num_bits_per_slice + slice_bit_index
-            already_present |= self._bit_array[bit_index]
+            bit_index: int = slice_index * self.num_bits_per_slice + slice_bit_index
+            bit_statuses.append(self._bit_array[bit_index])
             self._bit_array[bit_index] = True
 
         self._num_elements_mapped += 1
 
-        return already_present
+        return all(bit_statuses)
 
-    def update(self, *values: Iterable[bytes]) -> Tuple[bool, ...]:
+    def update(self, *values: SupportsBytes) -> Tuple[bool, ...]:
+        """
+        Add multiple values to the Bloom filter.
+
+        :param values: The values to be added to the Bloom filter.
+        :return: A tuple of booleans indicating whether each of the provided values had already had their bits set.
+        """
+
         return tuple(self.add(value=value) for value in values)
 
