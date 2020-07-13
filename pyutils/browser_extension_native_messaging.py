@@ -1,6 +1,6 @@
 from sys import stdout, stdin
 from struct import pack as struct_pack, unpack as struct_unpack
-from typing import Union
+from typing import Union, Optional
 
 NUM_MESSAGE_LENGTH_SPECIFIER_BYTES = 4
 
@@ -40,13 +40,15 @@ def write_message(message: Union[bytes, str], encoding: str = 'utf-8') -> int:
     )
 
 
-def read_message() -> bytes:
+def read_message() -> Optional[bytes]:
     """
     Read a message passed by the browser extension from stdin.
 
     :return: The bytes constituting the message passed by the browser extension.
     """
 
-    return stdin.buffer.read(
-        struct_unpack('=I', stdin.buffer.read(NUM_MESSAGE_LENGTH_SPECIFIER_BYTES))[0]
-    )
+    message_length_bytes: bytes = stdin.buffer.read(NUM_MESSAGE_LENGTH_SPECIFIER_BYTES)
+    if not message_length_bytes:
+        return None
+
+    return stdin.buffer.read(struct_unpack('=I', message_length_bytes)[0])
