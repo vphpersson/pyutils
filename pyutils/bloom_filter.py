@@ -1,12 +1,12 @@
 # Heavily inspired by python-bloomfilter.
 
 from __future__ import annotations
-from hashlib import sha3_256
-from struct import pack, Struct
+from struct import pack as struct_pack, unpack_from as struct_unpack_from, Struct, calcsize as struct_calcsize
 from math import ceil, log
 from functools import cached_property
 from collections.abc import Sized, Container
 from typing import SupportsBytes, Callable, Generator, Iterable, Tuple, Collection, List
+import hashlib
 
 from bitarray import bitarray
 
@@ -37,7 +37,7 @@ class _BitIndexNumberStruct(Struct):
 def _make_aggregated_hash_function(
     num_slices: int,
     num_bits_per_slice: int,
-    hash_function=sha3_256
+    hash_function=hashlib.sha3_256
 ) -> Callable[[bytes], Generator[int, None, None]]:
     """
     Make a customized aggregated hash function that yields bit index numbers into Bloom filter slices.
@@ -63,7 +63,7 @@ def _make_aggregated_hash_function(
     # Use as many hash functions as are necessary to assure that each slice is indexed. Each hash function must be
     # salted as to make them independent.
     num_different_hash_functions = ceil(num_slices / num_bit_index_numbers_in_hash)
-    salt_values = tuple(pack('I', i) for i in range(num_different_hash_functions))
+    salt_values = tuple(struct_pack('I', i) for i in range(num_different_hash_functions))
 
     def aggregated_hash_function(value: bytes):
 
@@ -87,11 +87,14 @@ def _make_aggregated_hash_function(
 
 class BloomFilter(Sized, Container):
 
+    _IMPORT_EXPORT_LENGTH_FORMAT = '>Q'
+
     def __init__(
         self,
         capacity: int,
         false_positive_probability: float = 0.001,
-        hash_function=sha3_256
+        hash_function=hashlib.sha3_256,
+        bit_array: bitarray = None
     ):
         """
         The bit size of the Bloom filter is calculated based on the requested capacity and false positive probability
@@ -104,18 +107,23 @@ class BloomFilter(Sized, Container):
         :param hash_function: The underlying hash function to be used.
         """
 
-        self._false_positive_probability = false_positive_probability
         self._capacity = capacity
+        self._false_positive_probability = false_positive_probability
+        self._hash_function = hash_function
+
         self._num_elements_mapped = 0
 
         self._hash: Callable[[bytes], Generator[int, None, None]] = _make_aggregated_hash_function(
             num_slices=self.num_slices,
             num_bits_per_slice=self.num_bits_per_slice,
-            hash_function=hash_function
+            hash_function=self._hash_function
         )
 
         self._bit_array = bitarray(self.bit_size)
         self._bit_array.setall(False)
+
+        if bit_array:
+            self._bit_array |= bit_array[:len(self._bit_array)]
 
     @classmethod
     def from_values(
@@ -123,7 +131,7 @@ class BloomFilter(Sized, Container):
         values: Iterable[SupportsBytes],
         capacity: int,
         false_positive_probability: float = 0.001,
-        hash_function=sha3_256
+        hash_function=hashlib.sha3_256
     ) -> BloomFilter:
         """
         Make a Bloom filter from an iterable of values, using a provided capacity.
@@ -150,7 +158,7 @@ class BloomFilter(Sized, Container):
         values: Collection[SupportsBytes],
         capacity_proportion: float = 1.5,
         false_positive_probability: float = 0.001,
-        hash_function=sha3_256
+        hash_function=hashlib.sha3_256
     ) -> BloomFilter:
         """
         Make a Bloom filter from a collection of values, using a provided capacity proportion.
@@ -178,6 +186,10 @@ class BloomFilter(Sized, Container):
     @cached_property
     def false_positive_probability(self) -> float:
         return self._false_positive_probability
+
+    @cached_property
+    def hash_function(self):
+        return self._hash_function
 
     @cached_property
     def _necessary_bit_size(self) -> float:
@@ -219,6 +231,71 @@ class BloomFilter(Sized, Container):
     def __len__(self) -> int:
         return self._num_elements_mapped
 
+    def __bytes__(self) -> bytes:
+        return self._bit_array.tobytes()
+
+    def export_bytes(self) -> bytes:
+        """
+        Export a `BloomFilter` instance as a byte sequence.
+
+        The hash function is a complication; it is exported as a name byte string.
+
+        :return: A byte sequence representation of a `BloomFilter` instance.
+        """
+
+        capacity_bytes: bytes = struct_pack('>Q', self._capacity)
+        false_positive_probability_bytes: bytes = struct_pack('f', self._false_positive_probability)
+        hash_function_name_bytes: bytes = self.hash_function.__name__.encode()
+
+        bit_array_bytes: bytes = self._bit_array.tobytes()
+
+        return b''.join([
+            capacity_bytes,
+            false_positive_probability_bytes,
+            struct_pack(self._IMPORT_EXPORT_LENGTH_FORMAT, len(hash_function_name_bytes)),
+            hash_function_name_bytes,
+            struct_pack(self._IMPORT_EXPORT_LENGTH_FORMAT, len(bit_array_bytes)),
+            bit_array_bytes
+        ])
+
+    @classmethod
+    def import_bytes(cls, data: bytes, hash_function=None, base_offset: int = 0) -> BloomFilter:
+        """
+        Import an exported `BloomFilter` byte sequence and make an instance.
+
+        :param data: A byte sequence from which to extract the data representing a `BloomFilter`.
+        :param hash_function: A hash function to use in case the exported name cannot be looked up in the `hashlib`.
+            module.
+        :param base_offset: The offset from the start of the byte sequence from where to start extracting.
+        :return: A `BloomFilter` instance as represented by the pointed-to byte sequence.
+        """
+
+        offset = base_offset
+
+        capacity = struct_unpack_from('>Q', buffer=data, offset=offset)[0]
+        offset += struct_calcsize('>Q')
+
+        false_positive_probability = struct_unpack_from('f', buffer=data, offset=offset)[0]
+        offset += struct_calcsize('f')
+
+        hash_function_name_bytes_len: int = struct_unpack_from(cls._IMPORT_EXPORT_LENGTH_FORMAT, buffer=data, offset=offset)[0]
+        offset += struct_calcsize(cls._IMPORT_EXPORT_LENGTH_FORMAT)
+        hash_function_name: str = data[offset:offset+hash_function_name_bytes_len].decode()
+        offset += hash_function_name_bytes_len
+
+        bit_array_bytes_len: int = struct_unpack_from(cls._IMPORT_EXPORT_LENGTH_FORMAT, buffer=data, offset=offset)[0]
+        offset += struct_calcsize(cls._IMPORT_EXPORT_LENGTH_FORMAT)
+
+        bit_array = bitarray()
+        bit_array.frombytes(data[offset:offset + bit_array_bytes_len])
+
+        return cls(
+            capacity=capacity,
+            false_positive_probability=false_positive_probability,
+            hash_function=hash_function or getattr(hashlib, hash_function_name),
+            bit_array=bit_array
+        )
+
     def add(self, value: SupportsBytes) -> bool:
         """
         Add a value to the Bloom filter.
@@ -250,4 +327,3 @@ class BloomFilter(Sized, Container):
         """
 
         return tuple(self.add(value=value) for value in values)
-
