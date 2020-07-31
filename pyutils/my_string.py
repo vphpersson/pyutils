@@ -74,3 +74,31 @@ def underline(string: str, underline_character: str = '=') -> str:
     """
 
     return f'{string}\n{len(string) * underline_character}'
+
+
+def text_align_delimiter(text: str, delimiter: str = ': ', put_non_match_after_delimiter: bool = True) -> str:
+    """
+    Align a multi-line text around a delimiter.
+
+    :param text: The text to be aligned.
+    :param delimiter: The delimiter to align around.
+    :param put_non_match_after_delimiter: Whether lines in the text not having the delimiter should be put after the
+        alignment position.
+    :return: The input text aligned around the specified delimiter.
+    """
+
+    max_delimiter_pos: int = max(
+        line.find(delimiter)
+        for line in text.splitlines()
+    )
+
+    return '\n'.join(
+        (
+            (line[:delimiter_pos].rjust(max_delimiter_pos) + line[delimiter_pos:])
+            if (delimiter_pos := line.find(delimiter)) != -1 else
+            (
+                (' ' * (max_delimiter_pos + len(delimiter)) + line) if put_non_match_after_delimiter else line
+            )
+        )
+        for line in text.splitlines()
+    )
