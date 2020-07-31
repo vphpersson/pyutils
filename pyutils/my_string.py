@@ -62,3 +62,15 @@ def to_camel_case(string: str) -> str:
     return lowercase_first_character(
         string=_SNAKE_KEBAB_CASED_LETTER_PATTERN.sub(repl=lambda match: match.group(1).upper(), string=string)
     )
+
+
+def underline(string: str, underline_character: str = '=') -> str:
+    """
+    Underline a string with a sequence of character equal to the string's length.
+
+    :param string: A string to be underlined.
+    :param underline_character: The character which will compose the underline.
+    :return: The input string underlined with the specified charater.
+    """
+
+    return f'{string}\n{len(string) * underline_character}'
