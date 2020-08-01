@@ -95,9 +95,8 @@ def text_align_delimiter(text: str, delimiter: str = ': ', put_non_match_after_d
     return '\n'.join(
         (
             (line[:delimiter_pos].rjust(max_delimiter_pos) + line[delimiter_pos:])
-            if (delimiter_pos := line.find(delimiter)) != -1 else
-            (
-                (' ' * (max_delimiter_pos + len(delimiter)) + line) if put_non_match_after_delimiter else line
+            if (delimiter_pos := line.find(delimiter)) != -1 else (
+                (' ' * (max_delimiter_pos + len(delimiter)) + line) if (line and put_non_match_after_delimiter) else line
             )
         )
         for line in text.splitlines()
