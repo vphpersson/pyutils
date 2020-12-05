@@ -40,7 +40,7 @@ def is_int_like(value: Any) -> bool:
 
 def is_str_like(value: Any) -> bool:
     """
-    Test whethehr a value is str-like.
+    Test whether a value is str-like.
 
     :param value: A value to be tested.
     :return: Whether the value is str-like.
