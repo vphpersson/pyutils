@@ -1,4 +1,4 @@
-from typing import Dict, Any, Pattern
+from typing import Dict, Any, Pattern, Optional
 from re import compile as re_compile, sub as re_sub, escape as re_escape
 
 _CAMEL_CASED_LETTER_PATTERN = re_compile(pattern=r'(?<=.)((?<=[a-z])[A-Z]|[A-Z](?=[a-z]))')
@@ -108,6 +108,7 @@ def expand_var(
     string: str,
     expand_map: Dict[str, Any],
     var_char: str = '%',
+    end_var_char: Optional[str] = None,
     exception_on_unexpanded: bool = False
 ) -> str:
     """
@@ -121,13 +122,16 @@ def expand_var(
 
     :param string: The string to be expanded.
     :param expand_map: A name-to-value map of variable names and their corresponding values.
-    :param var_char: A character that surrounds the variable names.
+    :param var_char: A character that surrounds the variable names if `end_var_char` is not specified, otherwise that
+        is immediately to the left of the variable name.
+    :param end_var_char: A character that is immediately to the right of the variable name.
     :param exception_on_unexpanded: Raise an exception if an variable name in the string is not in the map.
     :return: The variable-expanded string.
     """
 
     var_char: str = re_escape(var_char)
-    var_pattern: Pattern = re_compile(f'{var_char}(?P<variable_name>[^%]+){var_char}')
+    end_var_char: str = re_escape(end_var_char) if end_var_char else var_char
+    var_pattern: Pattern = re_compile(f'{var_char}(?P<variable_name>[^{end_var_char}]+){end_var_char}')
 
     search_start_offset = 0
     while match := var_pattern.search(string=string, pos=search_start_offset):
