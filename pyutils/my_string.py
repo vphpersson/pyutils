@@ -108,36 +108,50 @@ def expand_var(
     string: str,
     expand_map: Dict[str, Any],
     var_char: str = '%',
-    end_var_char: Optional[str] = None,
+    end_var_char: Optional[str] = '',
+    case_sensitive: bool = True,
     exception_on_unexpanded: bool = False
 ) -> str:
     """
-    Expand the variables in a string given a map.
+    Expand variables in a string.
 
-    If an encountered variable name is not in provided map, the function can either ignore it, leaving
-    the variable reference in-place, or raise an exception.
+    If an encountered variable name is not in provided map, the function can either ignore it -- leaving the variable
+    reference in-place -- or raise an exception.
 
-    Each encountered variable name is transformed to lowercase prior to the lookup in `expand_map`, thus all lookup
-    keys (variable names) in `expand_map` should lowercase.
+    If `end_var_char` is not specified (i.e. is an empty string), `var_char` is used in its place. If `end_var_char` is
+    set to `None`, no surrounding character to the right is used.
 
     :param string: The string to be expanded.
     :param expand_map: A name-to-value map of variable names and their corresponding values.
     :param var_char: A character that surrounds the variable names if `end_var_char` is not specified, otherwise that
         is immediately to the left of the variable name.
-    :param end_var_char: A character that is immediately to the right of the variable name.
-    :param exception_on_unexpanded: Raise an exception if an variable name in the string is not in the map.
+    :param end_var_char: A character that is immediately to the right of the variable name, unless set to `None`, in
+        which case no character is used.
+    :param case_sensitive: Whether the variable names in the string are case sensitive. If not, they are lower-cased
+        prior to the map lookup.
+    :param exception_on_unexpanded: Raise an exception if a variable name in the string is not in the map.
     :return: The variable-expanded string.
     """
 
-    var_char: str = re_escape(var_char)
-    end_var_char: str = re_escape(end_var_char) if end_var_char else var_char
-    var_pattern: Pattern = re_compile(f'{var_char}(?P<variable_name>[^{end_var_char}]+){end_var_char}')
+    escaped_var_char: str = re_escape(var_char)
+
+    if end_var_char == '':
+        # NOTE: `end_var_char` should not be escaped within the bracket expression ("[]"), as characters within such
+        # expressions are parsed literally.
+        var_pattern: Pattern = re_compile(
+            f'{escaped_var_char}(?P<variable_name>[^{end_var_char or var_char}]+){re_escape(end_var_char or var_char)}'
+        )
+    else:
+        var_pattern: Pattern = re_compile(f'{escaped_var_char}(?P<variable_name>.+?)\\b')
 
     search_start_offset = 0
     while match := var_pattern.search(string=string, pos=search_start_offset):
         var_pos_start, var_pos_end = match.span(0)
 
-        variable_name: str = match.groupdict()['variable_name'].lower()
+        variable_name: str = match.groupdict()['variable_name']
+        if not case_sensitive:
+            variable_name = variable_name.lower()
+
         if variable_name in expand_map:
             expanded_head: str = string[:var_pos_start] + str(expand_map[variable_name])
             string: str = expanded_head + string[var_pos_end:]
