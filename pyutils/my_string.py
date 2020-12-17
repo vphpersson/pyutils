@@ -135,14 +135,14 @@ def expand_var(
 
     escaped_var_char: str = re_escape(var_char)
 
-    if end_var_char == '':
+    if end_var_char is None:
+        var_pattern: Pattern = re_compile(f'{escaped_var_char}(?P<variable_name>.+?)\\b')
+    else:
         # NOTE: `end_var_char` should not be escaped within the bracket expression ("[]"), as characters within such
         # expressions are parsed literally.
         var_pattern: Pattern = re_compile(
             f'{escaped_var_char}(?P<variable_name>[^{end_var_char or var_char}]+){re_escape(end_var_char or var_char)}'
         )
-    else:
-        var_pattern: Pattern = re_compile(f'{escaped_var_char}(?P<variable_name>.+?)\\b')
 
     search_start_offset = 0
     while match := var_pattern.search(string=string, pos=search_start_offset):
