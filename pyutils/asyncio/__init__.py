@@ -26,40 +26,40 @@ async def limited_gather(
     if not iterable:
         return
 
-    request_limiting_semaphore = Semaphore(num_concurrent)
+    limiting_semaphore = Semaphore(num_concurrent)
     all_finished_event = Event()
 
     num_started = 0
     num_finished = 0
 
-    passed_iteration_value_contextvar = ContextVar('passed_iteration_value')
+    passed_iteration_value_context_var = ContextVar('passed_iteration_value')
 
-    def response_callback_done_callback(*_, **__):
+    def signal_callback_finished(*_, **__):
         nonlocal num_finished
         num_finished += 1
         all_finished_event.set()
 
     def task_done_callback(finished_task: Task) -> None:
-        request_limiting_semaphore.release()
+        limiting_semaphore.release()
 
         if iscoroutine(result_callback):
             Task(
-                coro=result_callback(finished_task, passed_iteration_value_contextvar.get())
-            ).add_done_callback(response_callback_done_callback)
+                coro=result_callback(finished_task, passed_iteration_value_context_var.get())
+            ).add_done_callback(signal_callback_finished)
             return
 
         try:
-            result_callback(finished_task, passed_iteration_value_contextvar.get())
+            result_callback(finished_task, passed_iteration_value_context_var.get())
         except:
             LOG.exception(f'Unexpected exception in result callback.')
         finally:
-            response_callback_done_callback()
+            signal_callback_finished()
 
     for iteration_value in iterable:
-        await request_limiting_semaphore.acquire()
+        await limiting_semaphore.acquire()
         num_started += 1
 
-        passed_iteration_value_token: Token = passed_iteration_value_contextvar.set(iteration_value)
+        passed_iteration_value_token: Token = passed_iteration_value_context_var.set(iteration_value)
 
         Task(
             coro=iteration_coroutine(iteration_value)
@@ -68,7 +68,7 @@ async def limited_gather(
             context=copy_context()
         )
 
-        passed_iteration_value_contextvar.reset(passed_iteration_value_token)
+        passed_iteration_value_context_var.reset(passed_iteration_value_token)
 
     while num_finished < num_started:
         await all_finished_event.wait()
