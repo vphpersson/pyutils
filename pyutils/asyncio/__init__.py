@@ -1,7 +1,6 @@
 from logging import getLogger
-from typing import Callable, Any, Iterable
-from asyncio import Task, Semaphore, Event
-from inspect import iscoroutine
+from typing import Callable, Any, Iterable, Optional
+from asyncio import Task, Semaphore, Event, iscoroutine
 from contextvars import ContextVar, Token, copy_context
 
 LOG = getLogger(__name__)
@@ -42,17 +41,17 @@ async def limited_gather(
     def task_done_callback(finished_task: Task) -> None:
         limiting_semaphore.release()
 
-        if iscoroutine(result_callback):
-            Task(
-                coro=result_callback(finished_task, passed_iteration_value_context_var.get())
-            ).add_done_callback(signal_callback_finished)
-            return
+        response: Optional[Any] = None
 
         try:
-            result_callback(finished_task, passed_iteration_value_context_var.get())
+            response = result_callback(finished_task, passed_iteration_value_context_var.get())
         except:
             LOG.exception(f'Unexpected exception in result callback.')
         finally:
+            if iscoroutine(response):
+                Task(coro=response).add_done_callback(signal_callback_finished)
+                return
+
             signal_callback_finished()
 
     for iteration_value in iterable:
