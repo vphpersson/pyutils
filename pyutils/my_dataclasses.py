@@ -42,7 +42,7 @@ class JsonDataclass(ABC):
             else:
                 if get_origin(annotated_value_type) is Union:
                     value_type_args = get_args(annotated_value_type)
-                    if len(value_type_args) == 2 and isinstance(value_type_args[1], type(None)):
+                    if len(value_type_args) == 2 and value_type_args[1] is type(None):
                         annotated_value_type = value_type_args[0]
                     else:
                         raise NotImplementedError
