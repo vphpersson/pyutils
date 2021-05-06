@@ -1,5 +1,5 @@
 from dataclasses import is_dataclass, fields, make_dataclass
-from typing import Any, Dict, get_origin, get_args, Optional, List
+from typing import Any, get_origin, get_args, Optional, List, get_type_hints, Union
 from abc import ABC
 from uuid import uuid4
 
@@ -8,19 +8,24 @@ from pyutils.my_string import to_snake_case, to_pascal_case
 
 class JsonDataclass(ABC):
 
-    @classmethod
-    def from_json(cls, json_object: Dict[str, Any]):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        prepared_kwargs: Dict[str, Any] = {}
+    @classmethod
+    def from_json(cls, json_object: dict[str, Any]):
+        if json_object is None:
+            return None
+
+        prepared_kwargs: dict[str, Any] = {}
+
+        class_type_hints = get_type_hints(cls)
 
         for key, value in json_object.items():
             snake_cased_key: str = to_snake_case(string=key)
-            annotated_value_type = cls.__annotations__[snake_cased_key]
+            annotated_value_type = class_type_hints[snake_cased_key]
 
-            if is_dataclass(annotated_value_type) and issubclass(annotated_value_type, JsonDataclass):
-                prepared_kwargs[snake_cased_key] = annotated_value_type.from_json(json_object=value)
-            elif get_origin(annotated_value_type) is list:
-                
+            # TODO: Do I need to use `get_origin` here?
+            if get_origin(annotated_value_type) is list:
                 list_annotated_value_type = get_args(annotated_value_type)
                 if len(list_annotated_value_type) != 1:
                     raise NotImplementedError
@@ -35,13 +40,22 @@ class JsonDataclass(ABC):
                 else:
                     prepared_kwargs[snake_cased_key] = value
             else:
-                prepared_kwargs[snake_cased_key] = value
+                if get_origin(annotated_value_type) is Union:
+                    value_type_args = get_args(annotated_value_type)
+                    if len(value_type_args) == 2 and isinstance(value_type_args[1], type(None)):
+                        annotated_value_type = value_type_args[0]
+                    else:
+                        raise NotImplementedError
+
+                if is_dataclass(annotated_value_type) and issubclass(annotated_value_type, JsonDataclass):
+                    prepared_kwargs[snake_cased_key] = annotated_value_type.from_json(json_object=value)
+                else:
+                    prepared_kwargs[snake_cased_key] = value
 
         return cls(**prepared_kwargs)
 
 
 def dict_to_dataclass(obj, class_name: Optional[str] = None):
-
     if isinstance(obj, dict):
         return make_dataclass(
             cls_name=(class_name or str(uuid4()).split('-')[-1]).replace('-', ''),
@@ -77,12 +91,13 @@ def dataclass_to_code(dataclass_class):
     :return:
     """
 
-    return '\n'.join(dataclass_to_code(field.type) for field in fields(dataclass_class) if is_dataclass(field.type)) + '\n\n' + (
+    return '\n'.join(
+        dataclass_to_code(field.type) for field in fields(dataclass_class) if is_dataclass(field.type)) + '\n\n' + (
 
-        f'@dataclass\n'
-        f'class {to_pascal_case(string=dataclass_class.__name__)}:\n    '
-        + ('\n    '.join(
-            f'{to_snake_case(string=field.name)}: {(to_pascal_case(string=field.type.__name__) if is_dataclass(field.type) else field.type.__name__)  if isinstance(field.type, type) else field.type}'
-            for field in fields(dataclass_class)
-        ) or 'pass')
-    )
+                   f'@dataclass\n'
+                   f'class {to_pascal_case(string=dataclass_class.__name__)}:\n    '
+                   + ('\n    '.join(
+               f'{to_snake_case(string=field.name)}: {(to_pascal_case(string=field.type.__name__) if is_dataclass(field.type) else field.type.__name__) if isinstance(field.type, type) else field.type}'
+               for field in fields(dataclass_class)
+           ) or 'pass')
+           )
