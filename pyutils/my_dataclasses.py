@@ -1,5 +1,7 @@
+#!/usr/bin/env python
+
 from dataclasses import is_dataclass, fields, make_dataclass
-from typing import Any, get_origin, get_args, Optional, List, get_type_hints, Union
+from typing import Any, get_origin, get_args, Optional, List, get_type_hints, Union, Type
 from abc import ABC
 from uuid import uuid4
 
@@ -70,7 +72,7 @@ def dict_to_dataclass(obj, class_name: Optional[str] = None):
             )
 
         # if not type_set:
-        return List[Any]
+        return list
         # elif len(type_set) != 1:
         #     raise ValueError
 
@@ -86,18 +88,19 @@ def dict_to_dataclass(obj, class_name: Optional[str] = None):
 
 def dataclass_to_code(dataclass_class):
     """
+    Produce a `dataclass` definition from a dataclass.
 
-    :param dataclass_class:
-    :return:
+    :param dataclass_class: A `dataclass` class.
+    :return: The code definition of the provided `dataclass` class.
     """
 
-    return '\n'.join(
-        dataclass_to_code(field.type) for field in fields(dataclass_class) if is_dataclass(field.type)) + '\n\n' + (
-
-                   f'@dataclass\n'
-                   f'class {to_pascal_case(string=dataclass_class.__name__)}:\n    '
-                   + ('\n    '.join(
-               f'{to_snake_case(string=field.name)}: {(to_pascal_case(string=field.type.__name__) if is_dataclass(field.type) else field.type.__name__) if isinstance(field.type, type) else field.type}'
-               for field in fields(dataclass_class)
-           ) or 'pass')
-           )
+    return (
+        '\n'.join(dataclass_to_code(field.type) for field in fields(dataclass_class) if is_dataclass(field.type)) + '\n\n\n' + (
+               f'@dataclass\n'
+               f'class {to_pascal_case(string=dataclass_class.__name__)}:\n    '
+               + ('\n    '.join(
+                   f'{to_snake_case(string=field.name)}: {(to_pascal_case(string=field.type.__name__) if is_dataclass(field.type) else field.type.__name__) if isinstance(field.type, type) else field.type}'
+                   for field in fields(dataclass_class)
+               ) or 'pass')
+        )
+    ).lstrip()
